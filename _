@@ -1,0 +1,87 @@
+from multiprocessing import Process, Pipe
+from os import getpid
+from datetime import datetime
+
+def local_time(counter):
+    return ' (LAMPORT_TIME = {}, LOCAL_TIME = {})'.format(counter, datetime.now())
+
+def event(pid, counter):
+    counter[pid] += 1
+    print('Something happened in {} !'.\
+          format(pid) + local_time(counter))
+    return counter
+
+def send_message(pipe, pid, counter, message):
+    counter[pid] += 1
+    pipe.send((message, counter))
+    print('Message sent from ' + str(pid) + local_time(counter))
+    return counter
+
+def recv_message(pipe, pid, counter):
+    message, timestamp = pipe.recv()
+
+    for id  in range(len(counter)):
+        counter[id] = max(timestamp[id], counter[id])
+
+    print('Message received at ' + str(pid)  + local_time(counter) + " Message: " + message)
+    return counter
+
+def process_a(pipe_ab):
+
+    pid = 0
+    counter = [0, 0, 0]
+
+    counter = send_message(pipe_ab, pid, counter, 'Message a0')
+    counter = send_message(pipe_ab, pid, counter, 'Message a1')
+    counter = event(pid, counter)
+    counter = recv_message(pipe_ab, pid, counter)
+    counter = event(pid, counter)
+    counter = event(pid, counter)
+    counter = recv_message(pipe_ab, pid, counter)
+
+    print('Process a [' + str(counter[0]) + ", " + str(counter[1]) + ", " + str(counter[2]) + "]")
+
+def process_b(pipe_ba, pipe_bc):
+
+    pid = 1
+    counter = [0, 0, 0]
+
+    counter = recv_message(pipe_ba, pid, counter)
+    counter = recv_message(pipe_ba, pid, counter)  
+    counter = send_message(pipe_ba, pid, counter, 'Message b2')
+    counter = recv_message(pipe_bc, pid, counter) 
+    counter = event(pid, counter)
+    counter = send_message(pipe_ba, pid, counter, 'Message b5')    
+    counter = send_message(pipe_bc, pid, counter, 'Message b6')
+    counter = send_message(pipe_bc, pid, counter, 'Message b7')
+
+    print('Process b [' + str(counter[0]) + ", " + str(counter[1]) + ", " + str(counter[2]) + "]")
+
+def process_c(pipe_cb):
+
+    pid = 2
+    counter = [0, 0, 0]
+
+    counter = send_message(pipe_cb, pid, counter, 'Message c0')
+    counter = recv_message(pipe_cb, pid, counter) 
+    counter = event(pid, counter)
+    counter = recv_message(pipe_cb, pid, counter)
+
+    print('Process c [' + str(counter[0]) + ", " + str(counter[1]) + ", " + str(counter[2]) + "]")
+
+if __name__ == '__main__':
+
+    ab, ba = Pipe()
+    bc, cb = Pipe()
+    
+    processA = Process(target = process_a, args = (ab,))
+    processB = Process(target = process_b, args = (ba, bc))
+    processC = Process(target = process_c, args = (cb,))
+    
+    processA.start()
+    processB.start()
+    processC.start()
+    
+    processA.join()
+    processB.join()
+    processC.join()
